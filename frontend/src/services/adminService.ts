@@ -60,7 +60,18 @@ export const adminService = {
       
       const { data, error } = await supabase.from("withdraw_requests").update(updateData).eq("id", id).select();
       if (error) throw error;
-      return data[0];
+
+      const updated = data[0];
+      if (status === "disetujui") {
+        await adminService.addTransaction({
+          member_id: updated.member_id,
+          amount: updated.amount,
+          type: "withdrawal",
+          date: new Date().toISOString().split('T')[0],
+          description: "Penarikan Dana (Pencairan)"
+        });
+      }
+      return updated;
     } catch (error: any) {
       throw new Error(`Gagal update penarikan: ${error.message}`);
     }
@@ -70,7 +81,18 @@ export const adminService = {
     try {
       const { data, error } = await supabase.from("deposit_requests").update({ status, note, updated_at: new Date().toISOString() }).eq("id", id).select();
       if (error) throw error;
-      return data[0];
+
+      const updated = data[0];
+      if (status === "selesai") {
+        await adminService.addTransaction({
+          member_id: updated.member_id,
+          amount: updated.amount,
+          type: "deposit",
+          date: new Date().toISOString().split('T')[0],
+          description: "Setoran via Transfer"
+        });
+      }
+      return updated;
     } catch (error: any) {
       throw new Error(`Gagal update setoran: ${error.message}`);
     }
