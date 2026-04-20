@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../components/ui/card";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
@@ -16,6 +16,7 @@ import { toast } from "sonner";
 import logoMBChondro from "figma:asset/45e4fce7a557fc1a50086cab7ccdf81229ecee5c.png";
 import { memberService } from "../../services/memberService";
 import { Member, Transaction, WithdrawRequest, AdminAccount } from "../../types";
+import { supabase } from "../../services/supabaseClient";
 
 export default function MemberDashboard() {
   const navigate = useNavigate();
@@ -32,40 +33,64 @@ export default function MemberDashboard() {
   const [memberToEdit, setMemberToEdit] = useState<Partial<Member>>({});
   
   const [loggedInMember, setLoggedInMember] = useState<Member | null>(null);
+  const [previewImageUrl, setPreviewImageUrl] = useState<string | null>(null);
+  const [withdrawRequests, setWithdrawRequests] = useState<WithdrawRequest[]>([]);
+  const [depositRequests, setDepositRequests] = useState<any[]>([]);
+  const [withdrawConfirmOpen, setWithdrawConfirmOpen] = useState(false);
+  const [cancelWithdrawConfirm, setCancelWithdrawConfirm] = useState<string | null>(null);
+  const [depositAmount, setDepositAmount] = useState("");
+  const [depositProofInput, setDepositProofInput] = useState<File | null>(null);
+  const [depositProofPreview, setDepositProofPreview] = useState<string | null>(null);
+  const [isSubmittingDeposit, setIsSubmittingDeposit] = useState(false);
+
+  const fetchAllData = useCallback(async () => {
+    const memberData = localStorage.getItem("memberData");
+    const memberLoggedIn = localStorage.getItem("memberLoggedIn");
+    
+    if (!memberLoggedIn || !memberData) {
+      navigate("/member/login");
+      return;
+    }
+    
+    const member = JSON.parse(memberData);
+    setLoggedInMember(member);
+    
+    try {
+      const [savingsRes, withdrawRes, depositRes, accountsRes] = await Promise.all([
+        memberService.getMemberTransactions(member.id),
+        memberService.getWithdrawRequests(member.id),
+        memberService.getDepositRequests(member.id),
+        memberService.getAdminAccounts()
+      ]);
+
+      setSavings(savingsRes);
+      setWithdrawRequests(withdrawRes);
+      setDepositRequests(depositRes);
+      setAdminAccounts(accountsRes);
+    } catch (error) {
+      console.error("Failed to fetch data:", error);
+    }
+  }, [navigate]);
 
   // Load data from Backend API
   useEffect(() => {
-    const fetchAllData = async () => {
-      const memberData = localStorage.getItem("memberData");
-      const memberLoggedIn = localStorage.getItem("memberLoggedIn");
-      
-      if (!memberLoggedIn || !memberData) {
-        navigate("/member/login");
-        return;
-      }
-      
-      const member = JSON.parse(memberData);
-      setLoggedInMember(member);
-      
-      try {
-        const [savingsRes, withdrawRes, depositRes, accountsRes] = await Promise.all([
-          memberService.getMemberTransactions(member.id),
-          memberService.getWithdrawRequests(member.id),
-          memberService.getDepositRequests(member.id),
-          memberService.getAdminAccounts()
-        ]);
-
-        setSavings(savingsRes);
-        setWithdrawRequests(withdrawRes);
-        setDepositRequests(depositRes);
-        setAdminAccounts(accountsRes);
-      } catch (error) {
-        console.error("Failed to fetch data:", error);
-      }
-    };
-
     fetchAllData();
-  }, [navigate]);
+  }, [fetchAllData]);
+
+  // Realtime subscription
+  useEffect(() => {
+    const channel = supabase
+      .channel('member-dashboard-changes')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'transactions' }, () => fetchAllData())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'withdraw_requests' }, () => fetchAllData())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'deposit_requests' }, () => fetchAllData())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'admin_accounts' }, () => fetchAllData())
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [fetchAllData]);
 
   const handleLogout = () => {
     localStorage.removeItem("memberLoggedIn");

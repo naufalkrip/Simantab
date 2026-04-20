@@ -3,8 +3,9 @@ import { Link, useNavigate } from "react-router";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import { format, differenceInDays } from "date-fns";
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import MemberList from "../../components/member-list";
+import { supabase } from "../../services/supabaseClient";
 import SavingsList from "../../components/transactions-list";
 import MemberFormDialog from "../../components/member-form-dialog";
 import SavingsFormDialog from "../../components/transactions-form-dialog";
@@ -84,70 +85,7 @@ export interface AdminAccount {
   created_at: string;
 }
 
-// Mock data
-const initialMembers: Member[] = [
-  {
-    id: "1",
-    name: "Budi Santoso",
-    phone: "081234567890",
-    join_date: "2024-01-15",
-  },
-  {
-    id: "2",
-    name: "Siti Nurhaliza",
-    phone: "082345678901",
-    join_date: "2024-02-20",
-  },
-  {
-    id: "3",
-    name: "Ahmad Rizki",
-    phone: "083456789012",
-    join_date: "2024-03-10",
-  },
-];
 
-const initialSavings: Transaction[] = [
-  {
-    id: "1",
-    member_id: "1",
-    amount: 50000,
-    date: "2024-03-01",
-    description: "Tabungan rutin Maret",
-    type: "deposit"
-  },
-  {
-    id: "2",
-    member_id: "1",
-    amount: 50000,
-    date: "2024-04-01",
-    description: "Tabungan rutin April",
-    type: "deposit"
-  },
-  {
-    id: "3",
-    member_id: "2",
-    amount: 75000,
-    date: "2024-03-01",
-    description: "Tabungan rutin Maret",
-    type: "deposit"
-  },
-  {
-    id: "4",
-    member_id: "2",
-    amount: 75000,
-    date: "2024-04-01",
-    description: "Tabungan rutin April",
-    type: "deposit"
-  },
-  {
-    id: "5",
-    member_id: "3",
-    amount: 100000,
-    date: "2024-03-15",
-    description: "Tabungan rutin Maret",
-    type: "deposit"
-  },
-];
 
 export default function AdminDashboard() {
   const navigate = useNavigate();
@@ -268,6 +206,28 @@ export default function AdminDashboard() {
 
 
 
+  const fetchData = useCallback(async () => {
+    try {
+      const [membersRes, savingsRes, withdrawRes, depositRes, accountsRes] = await Promise.all([
+        adminService.getMembers(),
+        adminService.getTransactions(),
+        adminService.getWithdrawRequests(),
+        adminService.getDepositRequests(),
+        adminService.getAdminAccounts()
+      ]);
+
+      setMembers(membersRes);
+      setSavings(savingsRes);
+      setWithdrawRequests(withdrawRes);
+      setDepositRequests(depositRes);
+      setAdminAccounts(accountsRes);
+    } catch (error) {
+      console.error("Failed to fetch data:", error);
+    } finally {
+      setIsLoaded(true);
+    }
+  }, []);
+
   // Load data from Backend API on mount
   useEffect(() => {
     const isLoggedIn = localStorage.getItem("adminLoggedIn");
@@ -276,32 +236,24 @@ export default function AdminDashboard() {
       return;
     }
 
-    const fetchData = async () => {
-      try {
-        const [membersRes, savingsRes, withdrawRes, depositRes, accountsRes] = await Promise.all([
-          adminService.getMembers(),
-          adminService.getTransactions(),
-          adminService.getWithdrawRequests(),
-          adminService.getDepositRequests(),
-          adminService.getAdminAccounts()
-        ]);
-
-        setMembers(membersRes.length > 0 ? membersRes : initialMembers);
-        setSavings(savingsRes.length > 0 ? savingsRes : initialSavings);
-        setWithdrawRequests(withdrawRes);
-        setDepositRequests(depositRes);
-        setAdminAccounts(accountsRes);
-      } catch (error) {
-        console.error("Failed to fetch data:", error);
-        setMembers(initialMembers);
-        setSavings(initialSavings);
-      } finally {
-        setIsLoaded(true);
-      }
-    };
-
     fetchData();
-  }, [navigate]);
+  }, [navigate, fetchData]);
+
+  // Realtime subscription
+  useEffect(() => {
+    const channel = supabase
+      .channel('admin-dashboard-changes')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'members' }, () => fetchData())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'transactions' }, () => fetchData())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'withdraw_requests' }, () => fetchData())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'deposit_requests' }, () => fetchData())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'admin_accounts' }, () => fetchData())
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [fetchData]);
 
   const handleLogout = () => {
     if (confirm("Apakah Anda yakin ingin keluar?")) {
