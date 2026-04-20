@@ -79,7 +79,10 @@ export const adminService = {
   /* Admin Accounts CRUD */
   addAdminAccount: async (account: Partial<AdminAccount>) => {
     try {
-      const { data, error } = await supabase.from("admin_accounts").insert(account).select();
+      const payload = { ...account };
+      if (!payload.id) payload.id = Date.now().toString(36) + Math.random().toString(36).substring(2, 9);
+      
+      const { data, error } = await supabase.from("admin_accounts").insert(payload).select();
       if (error) throw error;
       return data[0];
     } catch (error: any) {
@@ -100,7 +103,10 @@ export const adminService = {
   /* Members CRUD */
   addMember: async (member: Partial<Member>) => {
     try {
-      const { data, error } = await supabase.from("members").insert(member).select();
+      const payload = { ...member };
+      if (!payload.id) payload.id = Date.now().toString(36) + Math.random().toString(36).substring(2, 9);
+      
+      const { data, error } = await supabase.from("members").insert(payload).select();
       if (error) throw error;
       return data[0];
     } catch (error: any) {
@@ -131,7 +137,10 @@ export const adminService = {
   /* Transactions CRUD */
   addTransaction: async (transaction: Partial<Transaction>) => {
     try {
-      const { data, error } = await supabase.from("transactions").insert(transaction).select();
+      const payload = { ...transaction };
+      if (!payload.id) payload.id = Date.now().toString(36) + Math.random().toString(36).substring(2, 9);
+      
+      const { data, error } = await supabase.from("transactions").insert(payload).select();
       if (error) throw error;
       return data[0];
     } catch (error: any) {
